@@ -29,3 +29,4 @@ uritemplate~=4.1.1
 legacy~=0.1.6
 Flask~=2.2.5
 gunicorn
+google_auth_oauthlib
