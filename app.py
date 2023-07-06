@@ -139,7 +139,7 @@ def authorize(gmail):
     # for the OAuth 2.0 client, which you configured in the API Console. If this
     # value doesn't match an authorized URI, you will get a 'redirect_uri_mismatch'
     # error.
-    flow.redirect_uri = 'https://41c2-102-89-33-154.ngrok-free.app/oauth2callback'
+    flow.redirect_uri = 'https://claendar-plugin-db460edae67e.herokuapp.com/oauth2callback'
 
     # Set the 'login_hint' parameter to specify the Gmail account to authenticate.
     # This will pre-fill the email field on the authentication page.
