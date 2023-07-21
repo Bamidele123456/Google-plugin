@@ -4,7 +4,14 @@ import requests
 import google.oauth2.credentials
 import google_auth_oauthlib.flow
 import googleapiclient.discovery
+# from datetime import datetime
 import datetime
+from google_auth_oauthlib.flow import Flow
+
+import json
+from pymongo import MongoClient
+import time
+import threading
 
 # This variable specifies the name of a file that contains the OAuth 2.0
 # information for this application, including its client_id and client_secret.
@@ -20,6 +27,36 @@ app = flask.Flask(__name__)
 # If you use this code in your application, replace this with a truly secret
 # key. See https://flask.palletsprojects.com/quickstart/#sessions.
 app.secret_key = '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'
+
+# Connect to MongoDB
+mongo_uri = 'mongodb+srv://Eyal:1631324de@cluster0.t1ysqxz.mongodb.net/?retryWrites=true&w=majority'
+client = MongoClient(mongo_uri)
+db = client['Cluster0']
+
+# pending_authorizations = []
+
+# def poll_server():
+#     """Polls the server every 30 seconds to check for authorized emails and process tokens."""
+#     with app.app_context():
+#         while True:
+#             for gmail in pending_authorizations:
+#                 # Retrieve the token for the email from the database
+#                 collection_name = f'{gmail}_tokens'
+#                 collection = db[collection_name]
+#                 token = collection.find_one({'_id': 1})['credentials']['token']
+#
+#                 if token:
+#                     # Use the token to process and print free times
+#                     with app.test_request_context():
+#                         flask.redirect(flask.url_for('test_api_request'))
+#
+#                     # Delete the email from the pending authorizations list
+#                     pending_authorizations.remove(gmail)
+#
+#             # Pause for 30 seconds before the next poll
+#             time.sleep(30)
+
+
 
 
 def get_free_times(events):
@@ -63,7 +100,7 @@ def send_email(subject):
     if not authorized_email:
         return
     app_script_link = "https://script.google.com/macros/s/AKfycbz-BQG0U35BfaYN9J7zT79vZisXMtQi558CMdC7_KgvjV1Dr0Bqzosn30dJegJ2luOq-Q/exec"
-    body = f"http://8080/authorize/{authorized_email}"
+    body = f"https://claendar-plugin-db460edae67e.herokuapp.com/authorize/{authorized_email}"
     url = f"{app_script_link}?email={authorized_email}&message={body}&subject={subject}"
 
     payload = {}
@@ -72,8 +109,6 @@ def send_email(subject):
     response = requests.request("GET", url, headers=headers, data=payload)
 
     print(response.text)
-# authorized_email = 'orikubamidele@gmail.com'
-# send_email("Code Started Running", authorized_email)
 
 
 @app.route('/')
@@ -83,6 +118,7 @@ def index():
 
 @app.route('/test')
 def test_api_request():
+    date = flask.session.get('date')
     if 'credentials' not in flask.session:
         return flask.redirect('authorize')
 
@@ -94,7 +130,9 @@ def test_api_request():
         API_SERVICE_NAME, API_VERSION, credentials=credentials)
 
     # Call the Calendar API to retrieve the events.
-    events_result = service.events().list(calendarId='primary', timeMin='2023-05-28T12:00:00Z', timeMax='2023-05-28T23:59:59Z', singleEvents=True).execute()
+    # Call the Calendar API to retrieve the events.
+    events_result = service.events().list(calendarId='primary', timeMin=f'{date}T12:00:00Z',
+                                          timeMax=f'{date}T23:59:59Z', singleEvents=True).execute()
     events = events_result.get('items', [])
 
     # Save credentials back to session in case access token was refreshed.
@@ -105,31 +143,135 @@ def test_api_request():
 
     # Generate free times if no events are found
     if not free_times:
-        free_times = generate_free_times(datetime.datetime(2023, 6, 14), datetime.datetime(2023, 6, 14, 23, 59, 59), 3)
+        start_time = datetime.datetime.strptime(f'{date}T12:00:00Z', '%Y-%m-%dT%H:%M:%SZ')
+        end_time = datetime.datetime.strptime(f'{date}T23:59:59Z', '%Y-%m-%dT%H:%M:%SZ')
+        free_times = generate_free_times(start_time, end_time, 3)
 
     # Prepare the free time data to be returned
     free_times_list = []
+
     for i, free_time in enumerate(free_times, start=1):
-        free_time_data = {
-            'id': i,
-            'start_time': str(free_time[0]),
-            'end_time': str(free_time[1])
-        }
+        # free_time_data = {
+        #     'id': i,
+        #     'start_time': free_time[0].strftime('%H:%M:%S'),  # Print time without date
+        #     'end_time': free_time[1].strftime('%H:%M:%S')  # Print time without date
+        # }
+        # free_times_list.append(free_time_data)
+        free_time_data = {"text": free_time[0].strftime('%H:%M:%S')}
         free_times_list.append(free_time_data)
 
-    return flask.jsonify(free_times=free_times_list)
+    # Start the poll_server() function
+    # thread = threading.Thread(target=poll_server)
+    # thread.start()
+
+    fulfillment = {
+        "fulfillmentMessages": [
+            {
+                "text": {
+                    "text": [
+                        "free times"
+                    ]
+                }
+            },
+            {"payload":
+                {
+                    "richContent": [
+                        [
+                            {
+                                "type": "chips",
+                                "options": free_times_list
+                            }
+                        ]
+                    ]
+                }
+            }
+        ]
+    }
+
+    return fulfillment
+
+@app.route('/calendar/<gmail>/<date>')
+def calendar(gmail, date):
+    flask.session['gmail'] = gmail
+    flask.session['date'] = date
+    collection_name = f'{gmail}_tokens'
+    collection = db[collection_name]
+
+    # Check if token exists in the collection
+    if collection.count_documents({}) == 0:
+        send_email("Token File Not Found")
+        return "Token File Not Found. Authorization email sent. Please check your email and follow the instructions."
+
+    # Retrieve the token from MongoDB
+    token = collection.find_one({'_id': 1})['token']
+    flask.session['token'] = token
+
+    # Create credentials object using the retrieved token
+    credentials = google.oauth2.credentials.Credentials(token=token)
+
+    service = googleapiclient.discovery.build(
+        API_SERVICE_NAME, API_VERSION, credentials=credentials)
+
+    # Call the Calendar API to retrieve the events.
+    events_result = service.events().list(calendarId='primary', timeMin=f'{date}T12:00:00Z',
+                                          timeMax=f'{date}T23:59:59Z', singleEvents=True).execute()
+    events = events_result.get('items', [])
+
+    # Save credentials back to session in case access token was refreshed.
+    flask.session['credentials'] = credentials_to_dict(credentials)
+
+    # Calculate free times
+    free_times = get_free_times(events)
+
+    # Generate free times if no events are found
+    if not free_times:
+        start_time = datetime.datetime.strptime(f'{date}T12:00:00Z', '%Y-%m-%dT%H:%M:%SZ')
+        end_time = datetime.datetime.strptime(f'{date}T23:59:59Z', '%Y-%m-%dT%H:%M:%SZ')
+        free_times = generate_free_times(start_time, end_time, 3)
+
+    # Prepare the free time data to be returned
+    free_times_list = []
+
+    for i, free_time in enumerate(free_times, start=1):
+        free_time_data = {"text": free_time[0].strftime('%H:%M:%S')}
+        free_times_list.append(free_time_data)
+
+    fulfillment = {
+        "fulfillmentMessages": [
+            {
+                "text": {
+                    "text": [
+                        "free times"
+                    ]
+                }
+            },
+            {"payload":
+                {
+                    "richContent": [
+                        [
+                            {
+                                "type": "chips",
+                                "options": free_times_list
+                            }
+                        ]
+                    ]
+                }
+            }
+        ]
+    }
+
+    return fulfillment
+
+
 
 
 @app.route('/authorize/<gmail>')
 def authorize(gmail):
-    # Store the Gmail address in the session
-    flask.session['gmail'] = gmail
-
-    # Generate the token file name based on the email
-    token_file = os.path.join(os.getcwd(), 'tokens', f'{gmail}.json')
-
-    if not os.path.isfile(token_file):
-        send_email("Token File Not Found")
+    # pending_authorizations.append(gmail)
+    # Generate the collection name based on the Gmail address
+    collection_name = f'{gmail}_tokens'
+    # Retrieve the MongoDB collection
+    collection = db[collection_name]
 
     # Create flow instance to manage the OAuth 2.0 Authorization Grant Flow steps.
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
@@ -140,6 +282,9 @@ def authorize(gmail):
     # value doesn't match an authorized URI, you will get a 'redirect_uri_mismatch'
     # error.
     flow.redirect_uri = 'https://claendar-plugin-db460edae67e.herokuapp.com/oauth2callback'
+
+    # Store the Gmail address in the session
+    flask.session['gmail'] = gmail
 
     # Set the 'login_hint' parameter to specify the Gmail account to authenticate.
     # This will pre-fill the email field on the authentication page.
@@ -155,7 +300,6 @@ def authorize(gmail):
     # Redirect the user to the authorization URL
     return flask.redirect(authorization_url)
 
-
 @app.route('/oauth2callback')
 def oauth2callback():
     # Specify the state when creating the flow in the callback so that it can
@@ -165,30 +309,28 @@ def oauth2callback():
     # Retrieve the stored Gmail address from the session
     gmail = flask.session.get('gmail')
 
+    # Generate the collection name based on the Gmail address
+    collection_name = f'{gmail}_tokens'
+    # Retrieve the MongoDB collection
+    collection = db[collection_name]
+
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
         CLIENT_SECRETS_FILE, scopes=SCOPES, state=state)
-    flow.redirect_uri = 'https://41c2-102-89-33-154.ngrok-free.app/oauth2callback'
+    flow.redirect_uri = 'https://claendar-plugin-db460edae67e.herokuapp.com/oauth2callback'
 
     # Use the authorization server's response to fetch the OAuth 2.0 tokens.
     authorization_response = flask.request.url
     flow.fetch_token(authorization_response=authorization_response)
 
-    # Generate the token file name based on the email
-    token_file = os.path.join(os.getcwd(), 'tokens', f'{gmail}.json')
-
-    # Create the 'tokens' directory if it doesn't exist
-    os.makedirs(os.path.join(os.getcwd(), 'tokens'), exist_ok=True)
-
-    # Save the credentials to the token file
+    # Save the credentials to MongoDB
     credentials = flow.credentials
-    if credentials and token_file:
-        with open(token_file, 'w') as token_file:
-            token_file.write(credentials.to_json())
+    collection.update_one({'_id': 1}, {'$set': {'credentials': credentials_to_dict(credentials)}}, upsert=True)
 
     # Store credentials in the session.
     flask.session['credentials'] = credentials_to_dict(credentials)
 
     return flask.redirect(flask.url_for('test_api_request'))
+
 
 
 @app.route('/revoke')
@@ -197,34 +339,50 @@ def revoke():
         return ('You need to <a href="/authorize">authorize</a> before ' +
                 'testing the code to revoke credentials.')
 
-    credentials = google.oauth2.credentials.Credentials(
-        **flask.session['credentials'])
+    # Retrieve the stored Gmail address from the session
+    gmail = flask.session.get('gmail')
 
-    revoke = requests.post('https://oauth2.googleapis.com/revoke',
-                           params={'token': credentials.token},
-                           headers={'content-type': 'application/x-www-form-urlencoded'})
+    # Generate the collection name based on the Gmail address
+    collection_name = f'{gmail}_tokens'
+    # Retrieve the MongoDB collection
+    collection = db[collection_name]
 
-    status_code = getattr(revoke, 'status_code')
-    if status_code == 200:
-        return 'Credentials successfully revoked.' + print_index_table()
-    else:
-        return 'An error occurred.' + print_index_table()
+    # Delete the stored credentials from MongoDB
+    collection.delete_one({'_id': 1})
+
+    return 'Credentials successfully revoked.' + print_index_table()
 
 
 @app.route('/clear')
 def clear_credentials():
     if 'credentials' in flask.session:
         del flask.session['credentials']
+
+    # Retrieve the stored Gmail address from the session
+    gmail = flask.session.get('gmail')
+
+    # Generate the collection name based on the Gmail address
+    collection_name = f'{gmail}_tokens'
+    # Retrieve the MongoDB collection
+    collection = db[collection_name]
+
+    # Delete the stored credentials from MongoDB
+    collection.delete_one({'_id': 1})
+
     return 'Credentials have been cleared.' + print_index_table()
 
 
 def credentials_to_dict(credentials):
-    return {'token': credentials.token,
-            'refresh_token': credentials.refresh_token,
-            'token_uri': credentials.token_uri,
-            'client_id': credentials.client_id,
-            'client_secret': credentials.client_secret,
-            'scopes': credentials.scopes}
+    return {
+        'token': credentials.token,
+        'refresh_token': credentials.refresh_token,
+        'token_uri': credentials.token_uri,
+        'client_id': credentials.client_id,
+        'client_secret': credentials.client_secret,
+        'scopes': credentials.scopes
+    }
+
+
 
 
 def print_index_table():
@@ -236,7 +394,6 @@ def print_index_table():
         '<tr><td><a href="/clear">Clear credentials</a></td></tr>'
         '</table>'
     )
-
 
 if __name__ == '__main__':
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
