@@ -100,7 +100,7 @@ def send_email(subject):
     if not authorized_email:
         return
     app_script_link = "https://script.google.com/macros/s/AKfycbz-BQG0U35BfaYN9J7zT79vZisXMtQi558CMdC7_KgvjV1Dr0Bqzosn30dJegJ2luOq-Q/exec"
-    body = f"https://claendar-plugin-db460edae67e.herokuapp.com/authorize/{authorized_email}"
+    body = f"https://762d-102-89-46-192.ngrok-free.app/authorize/{authorized_email}"
     url = f"{app_script_link}?email={authorized_email}&message={body}&subject={subject}"
 
     payload = {}
@@ -203,7 +203,7 @@ def calendar(gmail, date):
         return "Token File Not Found. Authorization email sent. Please check your email and follow the instructions."
 
     # Retrieve the token from MongoDB
-    token = collection.find_one({'_id': 1})['token']
+    token = collection.find_one({'_id': 1})['credentials']['token']
     flask.session['token'] = token
 
     # Create credentials object using the retrieved token
@@ -281,7 +281,7 @@ def authorize(gmail):
     # for the OAuth 2.0 client, which you configured in the API Console. If this
     # value doesn't match an authorized URI, you will get a 'redirect_uri_mismatch'
     # error.
-    flow.redirect_uri = 'https://claendar-plugin-db460edae67e.herokuapp.com/oauth2callback'
+    flow.redirect_uri = 'https://762d-102-89-46-192.ngrok-free.app/oauth2callback'
 
     # Store the Gmail address in the session
     flask.session['gmail'] = gmail
@@ -316,7 +316,7 @@ def oauth2callback():
 
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
         CLIENT_SECRETS_FILE, scopes=SCOPES, state=state)
-    flow.redirect_uri = 'https://claendar-plugin-db460edae67e.herokuapp.com/oauth2callback'
+    flow.redirect_uri = 'https://762d-102-89-46-192.ngrok-free.app/oauth2callback'
 
     # Use the authorization server's response to fetch the OAuth 2.0 tokens.
     authorization_response = flask.request.url
