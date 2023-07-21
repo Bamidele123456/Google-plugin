@@ -33,3 +33,4 @@ google_auth_oauthlib
 google-auth
 google-api-python-client
 pymongo~=4.4.1
+google-auth-httplib2
