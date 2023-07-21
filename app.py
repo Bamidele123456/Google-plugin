@@ -7,7 +7,6 @@ import googleapiclient.discovery
 # from datetime import datetime
 import datetime
 from google_auth_oauthlib.flow import Flow
-
 import json
 from pymongo import MongoClient
 import time
@@ -19,7 +18,7 @@ CLIENT_SECRETS_FILE = "client_secret.json"
 
 # This OAuth 2.0 access scope allows for full read access to the user's calendar events.
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
-API_SERVICE_NAME = 'Calendar'
+API_SERVICE_NAME = 'calendar'
 API_VERSION = 'v3'
 
 app = flask.Flask(__name__)
