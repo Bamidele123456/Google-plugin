@@ -19,7 +19,7 @@ CLIENT_SECRETS_FILE = "client_secret.json"
 
 # This OAuth 2.0 access scope allows for full read access to the user's calendar events.
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
-API_SERVICE_NAME = 'Calendar'
+API_SERVICE_NAME = 'calendar'
 API_VERSION = 'v3'
 
 app = flask.Flask(__name__)
