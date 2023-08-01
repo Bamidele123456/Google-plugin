@@ -4,6 +4,9 @@ import requests
 import google.oauth2.credentials
 import google_auth_oauthlib.flow
 import googleapiclient.discovery
+from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
+from google.oauth2.credentials import Credentials
 # from datetime import datetime
 import datetime
 from google_auth_oauthlib.flow import Flow
@@ -109,7 +112,7 @@ def send_email(subject):
     if not authorized_email:
         return
     app_script_link = "https://script.google.com/macros/s/AKfycbz-BQG0U35BfaYN9J7zT79vZisXMtQi558CMdC7_KgvjV1Dr0Bqzosn30dJegJ2luOq-Q/exec"
-    body = f"https://762d-102-89-46-192.ngrok-free.app/authorize/{authorized_email}"
+    body = f"https://claendar-plugin-db460edae67e.herokuapp.com/authorize/{authorized_email}"
     url = f"{app_script_link}?email={authorized_email}&message={body}&subject={subject}"
 
     payload = {}
@@ -135,6 +138,7 @@ def test_api_request():
 
     # Find the document that matches the query
     result = collection.find_one({})
+
 
 
     # Create credentials object using the retrieved token
@@ -205,9 +209,35 @@ def calendar(gmail, date):
         send_email('Token not found')
         return "Token not found. Authorization email sent. Please check your email and follow the instructions."
 
-    # Create credentials object using the retrieved token
-    credentials = google.oauth2.credentials.Credentials(token=result['credentials']['token'])
+    credentials = google.oauth2.credentials.Credentials(
+        token=result['credentials']['token'],
+        refresh_token=result['credentials']['refresh_token'],
+        token_uri=result['credentials']['token_uri'],
+        client_id=result['credentials']['client_id'],
+        client_secret=result['credentials']['client_secret'],
+        scopes=['https://www.googleapis.com/auth/calendar.readonly']  # Update with your desired scopes
+    )
 
+    # Check if credentials are expired or not valid
+    if credentials.expired or not credentials.valid:
+        # If credentials have a refresh token, attempt to refresh the access token
+        if credentials.refresh_token:
+            try:
+                credentials.refresh(Request())
+                # Update the refreshed token in the database
+                collection.update_one({'_id': 1},
+                                      {'$set': {'credentials': json.dumps(credentials_to_dict(credentials))}})
+            except RefreshError as e:
+                # If the refresh fails, the token might be revoked or invalid.
+                # In this case, you may want to reauthorize the user and get new tokens.
+                send_email('Token refresh failed. Please reauthorize the application.')
+                return "Token refresh failed. Authorization email sent. Please check your email and follow the instructions."
+        else:
+            # If there's no refresh token, it means the user needs to reauthorize the application
+            send_email('Token expired or not valid. Please reauthorize the application.')
+            return "Token expired or not valid. Authorization email sent. Please check your email and follow the instructions."
+
+    # Use the refreshed credentials object to call the Calendar API
     service = googleapiclient.discovery.build(
         API_SERVICE_NAME, API_VERSION, credentials=credentials)
 
@@ -257,6 +287,7 @@ def calendar(gmail, date):
     }
 
     return fulfillment
+
 
 
 
@@ -398,4 +429,4 @@ def print_index_table():
 
 if __name__ == '__main__':
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-    app.run('localhost', 8080)
+    app.run('localhost', 8080, debug=True)
