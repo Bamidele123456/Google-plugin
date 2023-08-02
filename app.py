@@ -66,10 +66,7 @@ db = client['Cluster0']
 #                     pending_authorizations.remove(gmail)
 #
 #             # Pause for 30 seconds before the next poll
-#             time.sleep(30)
-
-
-
+#             time.sleep(3
 
 def get_free_times(events):
     """Calculates free time intervals between events."""
@@ -83,7 +80,7 @@ def get_free_times(events):
         end_time = sorted_events[i]['end'].get('dateTime', sorted_events[i]['end'].get('date'))
         start_time_next = sorted_events[i + 1]['start'].get('dateTime', sorted_events[i + 1]['start'].get('date'))
 
-        free_times.append((end_time, start_time_next))
+        free_times.append((datetime.datetime.fromisoformat(end_time), datetime.datetime.fromisoformat(start_time_next)))
 
     return free_times
 
@@ -105,6 +102,7 @@ def generate_free_times(start_time, end_time, count):
         current_time = end_time
 
     return free_times
+
 
 def send_email(subject):
     """Sends an email using an App Script API."""
@@ -193,9 +191,13 @@ def test_api_request():
     }
 
     return fulfillment
-@app.route('/calendar/<gmail>/<date>')
-def calendar(gmail, date):
-    flask.session['date'] = date
+
+
+# ... (previous code remains unchanged) ...
+
+@app.route('/calendar/<gmail>')
+def calendar(gmail):
+    # flask.session['date'] = date
     flask.session['gmail'] = gmail
     # Access the specific collection in MongoDB based on the Gmail address
     collection_name = f'{gmail}_tokens'
@@ -241,9 +243,15 @@ def calendar(gmail, date):
     service = googleapiclient.discovery.build(
         API_SERVICE_NAME, API_VERSION, credentials=credentials)
 
+    # Convert the current date to a string in the format 'YYYY-MM-DD'
+    target_date = datetime.datetime.now().strftime('%Y-%m-%d')
+
+    # Calculate the end date (current date + 5 days)
+    end_date = (datetime.datetime.now() + datetime.timedelta(days=5)).strftime('%Y-%m-%d')
+
     # Call the Calendar API to retrieve the events.
-    events_result = service.events().list(calendarId='primary', timeMin=f'{date}T12:00:00Z',
-                                          timeMax=f'{date}T23:59:59Z', singleEvents=True).execute()
+    events_result = service.events().list(calendarId='primary', timeMin=f'{target_date}T00:00:00Z',
+                                          timeMax=f'{end_date}T23:59:59Z', singleEvents=True).execute()
     events = events_result.get('items', [])
 
     # Calculate free times
@@ -251,15 +259,15 @@ def calendar(gmail, date):
 
     # Generate free times if no events are found
     if not free_times:
-        start_time = datetime.datetime.strptime(f'{date}T12:00:00Z', '%Y-%m-%dT%H:%M:%SZ')
-        end_time = datetime.datetime.strptime(f'{date}T23:59:59Z', '%Y-%m-%dT%H:%M:%SZ')
+        start_time = datetime.datetime.now().replace(hour=12, minute=0, second=0)
+        end_time = (datetime.datetime.now() + datetime.timedelta(days=5)).replace(hour=23, minute=59, second=59)
         free_times = generate_free_times(start_time, end_time, 3)
 
     # Prepare the free time data to be returned
     free_times_list = []
 
     for i, free_time in enumerate(free_times, start=1):
-        free_time_data = {"text": free_time[0].strftime('%H:%M:%S')}
+        free_time_data = {"text": free_time[0].strftime('%Y-%m-%d %H:%M:%S')}
         free_times_list.append(free_time_data)
 
     fulfillment = {
@@ -287,8 +295,6 @@ def calendar(gmail, date):
     }
 
     return fulfillment
-
-
 
 
 
