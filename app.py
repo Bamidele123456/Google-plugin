@@ -69,32 +69,40 @@ db = client['Cluster0']
 #             time.sleep(3
 
 def get_free_times(events):
-    """Calculates free time intervals between events."""
+    """Calculates free time intervals between events that are in the future."""
     free_times = []
 
     # Sort events based on start time
     sorted_events = sorted(events, key=lambda event: event['start'].get('dateTime', event['start'].get('date')))
+
+    # Get the current time
+    now = datetime.datetime.now()
 
     # Calculate free time intervals between events
     for i in range(len(sorted_events) - 1):
         end_time = sorted_events[i]['end'].get('dateTime', sorted_events[i]['end'].get('date'))
         start_time_next = sorted_events[i + 1]['start'].get('dateTime', sorted_events[i + 1]['start'].get('date'))
 
-        free_times.append((datetime.datetime.fromisoformat(end_time), datetime.datetime.fromisoformat(start_time_next)))
+        end_time_obj = datetime.datetime.fromisoformat(end_time)
+
+        # Filter out events that have already occurred
+        if end_time_obj > now:
+            free_times.append((end_time_obj, datetime.datetime.fromisoformat(start_time_next)))
 
     return free_times
 
 
+
 def generate_free_times(start_time, end_time, count):
-    """Generates a specified number of free time intervals for a given day with a 30-minute interval."""
-    total_duration = (end_time - start_time).total_seconds()
+    """Generates a specified number of free time intervals from the current time with a 30-minute interval."""
+    total_duration = (end_time - datetime.datetime.now()).total_seconds()
     duration_per_interval = total_duration / (count + 1)
 
     # Convert the duration to 30 minutes (1800 seconds)
     duration_per_interval = min(duration_per_interval, 1800)
 
     free_times = []
-    current_time = start_time
+    current_time = datetime.datetime.now()
 
     for _ in range(count):
         end_time = current_time + datetime.timedelta(seconds=duration_per_interval)
@@ -102,6 +110,7 @@ def generate_free_times(start_time, end_time, count):
         current_time = end_time
 
     return free_times
+
 
 
 def send_email(subject):
