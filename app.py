@@ -95,7 +95,7 @@ def get_free_times(events):
 
 def generate_free_times(start_time, end_time, count):
     """Generates a specified number of free time intervals from 1 hour after the current time with a 30-minute interval."""
-    current_time = datetime.datetime.now() + datetime.timedelta(hours=1)
+    current_time = datetime.datetime.now() + datetime.timedelta(hours=2)
     total_duration = (end_time - current_time).total_seconds()
     duration_per_interval = total_duration / (count + 1)
 
