@@ -91,6 +91,24 @@ def get_free_times(events):
 
     return free_times
 
+def generate_free_times2(start_time, end_time, count):
+    """Generates a specified number of free time intervals from 1 hour after the current time with a 30-minute interval."""
+    current_time = datetime.datetime.now() + datetime.timedelta(hours=6)
+    total_duration = (end_time - current_time).total_seconds()
+    duration_per_interval = total_duration / (count + 1)
+
+    # Convert the duration to 30 minutes (1800 seconds)
+    duration_per_interval = min(duration_per_interval, 1800)
+
+    free_times = []
+
+    for _ in range(count):
+        end_time = current_time + datetime.timedelta(seconds=duration_per_interval)
+        free_times.append((current_time, end_time))
+        current_time = end_time
+
+    return free_times
+
 
 
 def generate_free_times(start_time, end_time, count):
@@ -271,7 +289,108 @@ def calendar(gmail):
     if not free_times:
         start_time = datetime.datetime.now().replace(hour=12, minute=0, second=0)
         end_time = (datetime.datetime.now() + datetime.timedelta(days=5)).replace(hour=23, minute=59, second=59)
-        free_times = generate_free_times(start_time, end_time, 3)
+        free_times = generate_free_times(start_time, end_time, 5)
+
+    # Prepare the free time data to be returned
+    free_times_list = []
+
+    for i, free_time in enumerate(free_times, start=1):
+        free_time_data = {"text": free_time[0].strftime('%Y-%m-%d %H:%M:%S')}
+        free_times_list.append(free_time_data)
+
+    fulfillment = {
+        "fulfillmentMessages": [
+            {
+                "text": {
+                    "text": [
+                        "free times"
+                    ]
+                }
+            },
+            {
+                "payload": {
+                    "richContent": [
+                        [
+                            {
+                                "type": "chips",
+                                "options": free_times_list
+                            }
+                        ]
+                    ]
+                }
+            }
+        ]
+    }
+
+    return fulfillment
+
+@app.route('/alternative/<gmail>')
+def alternative(gmail):
+    # flask.session['date'] = date
+    flask.session['gmail'] = gmail
+    # Access the specific collection in MongoDB based on the Gmail address
+    collection_name = f'{gmail}_tokens'
+    collection = db[collection_name]
+
+    # Find the document that matches the query
+    result = collection.find_one({})
+
+    # If credentials are not found, send an email to authorize it
+    if not result:
+        send_email('Token not found')
+        return "Token not found. Authorization email sent. Please check your email and follow the instructions."
+
+    credentials = google.oauth2.credentials.Credentials(
+        token=result['credentials']['token'],
+        refresh_token=result['credentials']['refresh_token'],
+        token_uri=result['credentials']['token_uri'],
+        client_id=result['credentials']['client_id'],
+        client_secret=result['credentials']['client_secret'],
+        scopes=['https://www.googleapis.com/auth/calendar.readonly']  # Update with your desired scopes
+    )
+
+    # Check if credentials are expired or not valid
+    if credentials.expired or not credentials.valid:
+        # If credentials have a refresh token, attempt to refresh the access token
+        if credentials.refresh_token:
+            try:
+                credentials.refresh(Request())
+                # Update the refreshed token in the database
+                collection.update_one({'_id': 1},
+                                      {'$set': {'credentials': json.dumps(credentials_to_dict(credentials))}})
+            except RefreshError as e:
+                # If the refresh fails, the token might be revoked or invalid.
+                # In this case, you may want to reauthorize the user and get new tokens.
+                send_email('Token refresh failed. Please reauthorize the application.')
+                return "Token refresh failed. Authorization email sent. Please check your email and follow the instructions."
+        else:
+            # If there's no refresh token, it means the user needs to reauthorize the application
+            send_email('Token expired or not valid. Please reauthorize the application.')
+            return "Token expired or not valid. Authorization email sent. Please check your email and follow the instructions."
+
+    # Use the refreshed credentials object to call the Calendar API
+    service = googleapiclient.discovery.build(
+        API_SERVICE_NAME, API_VERSION, credentials=credentials)
+
+    # Convert the current date to a string in the format 'YYYY-MM-DD'
+    target_date = datetime.datetime.now().strftime('%Y-%m-%d')
+
+    # Calculate the end date (current date + 5 days)
+    end_date = (datetime.datetime.now() + datetime.timedelta(days=5)).strftime('%Y-%m-%d')
+
+    # Call the Calendar API to retrieve the events.
+    events_result = service.events().list(calendarId='primary', timeMin=f'{target_date}T00:00:00Z',
+                                          timeMax=f'{end_date}T23:59:59Z', singleEvents=True).execute()
+    events = events_result.get('items', [])
+
+    # Calculate free times
+    free_times = get_free_times(events)
+
+    # Generate free times if no events are found
+    if not free_times:
+        start_time = datetime.datetime.now().replace(hour=12, minute=0, second=0)
+        end_time = (datetime.datetime.now() + datetime.timedelta(days=5)).replace(hour=23, minute=59, second=59)
+        free_times = generate_free_times2(start_time, end_time, 3)
 
     # Prepare the free time data to be returned
     free_times_list = []
